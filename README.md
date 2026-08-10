@@ -1,3 +1,5 @@
+![ClaudeGate](assets/logo.png)
+
 # claudegate
 
 Gateway local multi-porta para Claude Code e uso geral com qualquer API OpenAI-compatible.
