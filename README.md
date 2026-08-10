@@ -23,7 +23,7 @@ Node.js puro. Sem dependências de runtime além do systray2 (ícone de bandeja)
 
 ---
 
-## Por que portas separadas ?
+## Por que as portas ?
 
 A ideia não é escolher modelo por requisição. É isolar contas e credenciais por sessão de terminal. Você abre `claude-4421` numa aba e está usando aquele provider com aquela chave. Se tiver várias chaves de contas diferentes, pode trocar de sessão sem editar configuração nenhuma.
 
