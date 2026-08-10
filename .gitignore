@@ -1,0 +1,5 @@
+node_modules/
+.claudegate/
+*.log
+.env
+.DS_Store

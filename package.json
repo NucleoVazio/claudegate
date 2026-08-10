@@ -1,0 +1,19 @@
+{
+  "name": "claudegate",
+  "version": "0.3.0",
+  "description": "Gateway local multi-porta para Claude Code e uso universal: cada porta é uma instância independente falando os protocolos Anthropic e OpenAI-compatible, configurável via dashboard, com autenticação local via senha 'gateway'.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "bin": {
+    "claudegate": "./src/cli.js"
+  },
+  "scripts": {
+    "gateway": "node src/master.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "systray2": "^2.1.4"
+  }
+}
