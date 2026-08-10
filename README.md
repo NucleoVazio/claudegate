@@ -1,4 +1,5 @@
 ![ClaudeGate](assets/logo.png)
+![ClaudeGate Banner](assets/banner.png)
 
 # claudegate
 
