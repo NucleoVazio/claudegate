@@ -32,7 +32,7 @@ A ideia não é escolher modelo por requisição. É isolar contas e credenciais
 ## Instalação
 
 ```bash
-git clone https://github.com/seu-usuario/claudegate.git
+git clone https://github.com/NucleoVazio/claudegate.git
 cd claudegate
 npm install
 sudo npm install -g .
