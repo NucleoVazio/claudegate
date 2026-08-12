@@ -1,4 +1,4 @@
-// Gera, para cada instância ativa, um script de shell `claude-<porta>` que
+// Gera, para cada instância ativa, um script `claude-<porta>` que
 // exporta ANTHROPIC_BASE_URL apontando para aquela porta e então invoca o
 // `claude` real. Os scripts ficam em ~/.claudegate/bin — esse diretório
 // precisa estar no PATH para os atalhos funcionarem em qualquer lugar.
@@ -8,6 +8,12 @@
 // além de CLAUDE_CODE_EFFORT_LEVEL=max e API_TIMEOUT_MS=300000.
 // Assim, dentro do Claude Code, o comando /model mostra as opções que você
 // configurou no dashboard da porta — e trocar de modelo é só selecionar.
+//
+// No Windows não existe bash nem ~/.bashrc por padrão, e um arquivo sem
+// extensão .cmd/.bat/.exe não é executado pelo cmd/PowerShell mesmo estando
+// no PATH — por isso, em process.platform === "win32", geramos um wrapper
+// .cmd (batch) em vez do script bash, e pulamos a edição automática de
+// rc file (ver ensurePathContainsBinDir).
 
 import { mkdir, writeFile, chmod, readFile, appendFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -15,6 +21,7 @@ import path from "node:path";
 import os from "node:os";
 
 const BIN_DIR = path.join(os.homedir(), ".claudegate", "bin");
+const IS_WINDOWS = process.platform === "win32";
 
 /**
  * ANTHROPIC_AUTH_TOKEN precisa ter algum valor não-vazio para o Claude Code
@@ -35,6 +42,18 @@ function escapeShellSingle(str) {
 }
 
 /**
+ * Escapa valor para uso dentro de `set "VAR=valor"` em batch do Windows.
+ * `%` precisa virar `%%` para não ser interpretado como expansão de
+ * variável dentro do próprio .cmd. Aspas duplas são removidas — não há
+ * escape confiável para elas dentro de `set "VAR=valor"`.
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeBatch(str) {
+  return String(str).replace(/%/g, "%%").replace(/"/g, "");
+}
+
+/**
  * @param {Array<{ port: number, provider?: any }>} instances
  */
 export async function installWrappers(instances) {
@@ -45,7 +64,6 @@ export async function installWrappers(instances) {
 
   for (const inst of instances) {
     const { port, provider } = inst;
-    const scriptPath = path.join(BIN_DIR, `claude-${port}`);
 
     if (!provider || !provider.defaultModel) {
       console.log(`  ⚠️  :${port} sem provider configurado — pulando (configure em http://127.0.0.1:${inst.dashboardPort})`);
@@ -59,7 +77,39 @@ export async function installWrappers(instances) {
     const modelOpus = provider.opusModel || modelDefault;
     const modelSonnet = provider.sonnetModel || modelDefault;
     const modelHaiku = provider.haikuModel || modelDefault;
+    const modelsLabel = `${modelDefault}${modelOpus !== modelDefault ? ` · opus:${modelOpus}` : ""}${modelSonnet !== modelDefault ? ` · sonnet:${modelSonnet}` : ""}${modelHaiku !== modelDefault ? ` · haiku:${modelHaiku}` : ""}`;
 
+    if (IS_WINDOWS) {
+      const scriptPath = path.join(BIN_DIR, `claude-${port}.cmd`);
+      const script = `@echo off
+REM Gerado automaticamente por "claudegate install". Nao edite a mao —
+REM rode "claudegate install" de novo se precisar regenerar.
+REM
+REM Instancia :${port}  (dashboard: http://127.0.0.1:${inst.dashboardPort})
+REM Provider:  ${escapeBatch(provider.label || modelDefault)}
+REM Base URL:  ${escapeBatch(provider.baseUrl || "")}
+
+set "ANTHROPIC_BASE_URL=http://127.0.0.1:${port}"
+set "ANTHROPIC_AUTH_TOKEN=${LOCAL_TOKEN_PLACEHOLDER}"
+set "ANTHROPIC_API_KEY="
+
+set "ANTHROPIC_MODEL=${escapeBatch(modelDefault)}"
+set "ANTHROPIC_DEFAULT_OPUS_MODEL=${escapeBatch(modelOpus)}"
+set "ANTHROPIC_DEFAULT_SONNET_MODEL=${escapeBatch(modelSonnet)}"
+set "ANTHROPIC_DEFAULT_HAIKU_MODEL=${escapeBatch(modelHaiku)}"
+
+set "CLAUDE_CODE_EFFORT_LEVEL=max"
+set "API_TIMEOUT_MS=300000"
+
+claude %*
+`;
+      await writeFile(scriptPath, script, "utf8");
+      console.log(`  ✅ ${scriptPath}  (modelos: ${modelsLabel})`);
+      installed += 1;
+      continue;
+    }
+
+    const scriptPath = path.join(BIN_DIR, `claude-${port}`);
     const script = `#!/usr/bin/env bash
 # Gerado automaticamente por "claudegate install". Não edite à mão —
 # rode "claudegate install" de novo se precisar regenerar.
@@ -86,7 +136,7 @@ exec claude "$@"
 `;
     await writeFile(scriptPath, script, "utf8");
     await chmod(scriptPath, 0o755);
-    console.log(`  ✅ ${scriptPath}  (modelos: ${modelDefault}${modelOpus !== modelDefault ? ` · opus:${modelOpus}` : ""}${modelSonnet !== modelDefault ? ` · sonnet:${modelSonnet}` : ""}${modelHaiku !== modelDefault ? ` · haiku:${modelHaiku}` : ""})`);
+    console.log(`  ✅ ${scriptPath}  (modelos: ${modelsLabel})`);
     installed += 1;
   }
 
@@ -98,7 +148,16 @@ exec claude "$@"
   if (pathUpdated) {
     console.log(`\n⚠️  Adicionei ${BIN_DIR} ao seu PATH. Abra um novo terminal (ou rode "source" no seu rc file) para os comandos claude-<porta> ficarem disponíveis.`);
   } else if (!isInCurrentPath()) {
-    console.log(`\n⚠️  ${BIN_DIR} não está no seu PATH. Adicione manualmente:\n   export PATH="${BIN_DIR}:$PATH"`);
+    if (IS_WINDOWS) {
+      console.log(`\n⚠️  ${BIN_DIR} não está no seu PATH. Adicione manualmente:
+   1. Pesquise por "Variáveis de Ambiente" no menu Iniciar do Windows
+   2. Em "Variáveis de usuário", edite a variável PATH e adicione uma nova entrada:
+      ${BIN_DIR}
+   3. Abra um novo terminal (cmd, PowerShell ou Windows Terminal) para os comandos claude-<porta> ficarem disponíveis.
+   (Não editamos o PATH do Windows automaticamente para evitar corromper variáveis longas via "setx".)`);
+    } else {
+      console.log(`\n⚠️  ${BIN_DIR} não está no seu PATH. Adicione manualmente:\n   export PATH="${BIN_DIR}:$PATH"`);
+    }
   }
 
   const firstInstalled = instances.find((i) => i.provider?.defaultModel);
@@ -116,10 +175,18 @@ function isInCurrentPath() {
  * Adiciona BIN_DIR ao PATH via shell rc file (~/.bashrc ou ~/.zshrc),
  * caso ainda não esteja presente. Não falha o comando inteiro se não
  * conseguir — só avisa o usuário para fazer manualmente.
+ *
+ * No Windows não fazemos essa edição automática: não há rc file
+ * equivalente, e alterar o PATH do usuário via "setx" corre o risco de
+ * truncar a variável (limite de ~1024 caracteres do setx.exe) e corromper
+ * o PATH existente. Nesse caso instruímos o usuário a adicionar manualmente
+ * (ver mensagem em installWrappers).
+ *
  * @returns {Promise<boolean>} true se modificou algum rc file agora
  */
 async function ensurePathContainsBinDir() {
   if (isInCurrentPath()) return false;
+  if (IS_WINDOWS) return false;
 
   const shell = process.env.SHELL ?? "";
   const rcFile = shell.includes("zsh")
